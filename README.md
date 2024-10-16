@@ -1,7 +1,6 @@
-# Xircuits Gradio Component Library
+# WIP: Xircuits Gradio Component Library
 
-This section should have a short description on what is does.
-
+This is a work in progress. It is mostly at the proof of concept stage. It shows everything that is needed to create gradio applications with Xircuits, but doesn't provide a lot of components for it yet.
 ## Prerequisites
 
 - gradio
