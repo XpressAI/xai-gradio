@@ -9,7 +9,7 @@ repository = "https://github.com/XpressAI/xai-gradio"
 keywords = ["xircuits", "gradio", "ML interfaces"]
 
 dependencies = [
-    "gradio==5.5.0",
+    "gradio==4.44",
     "makefun"
 ]
 
