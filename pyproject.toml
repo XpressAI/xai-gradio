@@ -10,7 +10,8 @@ keywords = ["xircuits", "gradio", "ML interfaces"]
 
 dependencies = [
     "gradio==4.44",
-    "makefun"
+    "makefun",
+    "openai==1.57"
 ]
 
 # Xircuits-specific configurations
