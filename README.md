@@ -120,5 +120,5 @@ You can also do it manually by cloning and installing it:
 ```
 # base Xircuits directory
 git clone https://github.com/XpressAI/xai-gradio xai_components/xai-gradio 
-pip install -r xai_components/xai-gradio /requirements.txt 
+pip install -r xai_components/xai-gradio/requirements.txt 
 ```
