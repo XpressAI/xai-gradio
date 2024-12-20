@@ -26,7 +26,7 @@ This library integrates Gradio with Xircuits, enabling the creation of customiza
 
 - [Preview](#preview)
 - [Prerequisites](#prerequisites)
-- [How It Works](#main-xircuits-components)
+- [How It Works](#how-it-works)
 - [Main Xircuits Components](#main-xircuits-components)
 - [Try the Examples](#try-the-examples)
 - [Installation](#installation)
