@@ -9,8 +9,9 @@ repository = "https://github.com/XpressAI/xai-gradio"
 keywords = ["xircuits", "gradio", "ML interfaces"]
 
 dependencies = [
-    "gradio==5.5.0",
-    "makefun"
+    "gradio==4.44",
+    "makefun",
+    "openai==1.57"
 ]
 
 # Xircuits-specific configurations

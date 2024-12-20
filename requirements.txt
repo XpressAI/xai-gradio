@@ -1,3 +1,3 @@
-gradio==4.44.*
-makefun
-openai
+gradio==4.44.0
+makefun==1.15.6
+openai==1.57.0
