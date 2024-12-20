@@ -26,6 +26,7 @@ This library integrates Gradio with Xircuits, enabling the creation of customiza
 
 - [Preview](#preview)
 - [Prerequisites](#prerequisites)
+- [How It Works](#main-xircuits-components)
 - [Main Xircuits Components](#main-xircuits-components)
 - [Try the Examples](#try-the-examples)
 - [Installation](#installation)
@@ -73,6 +74,26 @@ Before you begin, you will need the following:
 1. Python3.9+.
 2. Xircuits.
 
+
+### How it Works
+The Gradio component library follows this workflow pattern:
+
+1. **Input Components**: 
+Select input components from the component library (e.g., `GradioTextbox`, `GradioImage`, `GradioSlider`, etc.) based on your interface needs.
+
+2. **Output Components**:
+Choose output components (e.g., `GradioTextbox`, `GradioJSONOutput`, `GradioPlotOutput`, etc.) to display your results.
+
+3. **GradioInterface Connection**: 
+- Connect input components to `GradioInterface`'s `inputs` InPort
+- Connect output components to `GradioInterface`'s `outputs` InPort
+- Define corresponding parameter names in `parameterNames` InPort
+
+4. **Completing the Flow**:
+- Connect `GradioInterface`'s interface outPort to `GradioLaunch`
+- Connect processing logic to `GradioInterface`'s `fn` branch
+- Use `GradioFnReturn` to process and return values
+
 ## Main Xircuits Components
 
 ### GradioChatInterface Component:
@@ -92,8 +113,6 @@ Builds a Gradio interface using dynamic inputs and outputs, allowing flexible in
 Launches a Gradio interface or block as a standalone app.
 
 ## Try The Examples
-
-### Cat Adoption Form Example
 
 ### Cat Adoption Form Example  
  This example creates a cat adoption form using Gradio components. Users input the cat's name, adoption date, age, vaccination status, and upload an image. Submitted details are displayed alongside the image, and data can be saved by clicking the "Save" button.
@@ -119,6 +138,6 @@ xircuits install gradio
 You can also do it manually by cloning and installing it:
 ```
 # base Xircuits directory
-git clone https://github.com/XpressAI/xai-gradio xai_components/xai-gradio 
-pip install -r xai_components/xai-gradio/requirements.txt 
+git clone https://github.com/XpressAI/xai-gradio xai_components/xai_gradio 
+pip install -r xai_components/xai_gradio/requirements.txt 
 ```
