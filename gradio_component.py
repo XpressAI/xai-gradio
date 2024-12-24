@@ -1,7 +1,6 @@
 from xai_components.base import InArg, OutArg, InCompArg, Component, BaseComponent, secret, xai_component, dynalist, SubGraphExecutor
 import gradio as gr
 import makefun
-from openai import OpenAI
 import datetime
 
 @xai_component(color='blue', type='branch')
@@ -47,9 +46,10 @@ class GradioChatInterface(Component):
             msg.submit(fn, inputs=[chatbot, msg, img], outputs=[chatbot, msg, img])
         self.interface.value = demo
 
+
 @xai_component(color='blue', type='branch')
 class GradioInterface(Component):
-    """Creates a Gradio custom Gradio Interface.
+    """Creates a custom Gradio Interface.
 
     ##### inPorts:
     - parameterNames (dynalist): List of parameter names for the function.
@@ -134,7 +134,7 @@ class GradioFnReturn(Component):
     - message (str): User's input message.
     - history (list): Chat history for updates (optional).
     - use_responses (bool): Enable predefined responses from ctx.
-    - use_openai (bool): Enable OpenAI integration for generating responses.
+    - use_openai (bool): Enable calling an OpenAI helper function.
     - use_agent (bool): Enable Agent integration for generating responses.
     - log_file (str): Path to save chat history logs (optional).
     """
@@ -145,12 +145,6 @@ class GradioFnReturn(Component):
     use_openai: InArg[bool]
     use_agent: InArg[bool]
     log_file: InArg[str]
-
-    def execute(self, ctx) -> None:
-        use_responses: InArg[bool]  # Enable or disable predefined responses
-        use_openai: InArg[bool]  # Enable or disable OpenAI integration
-        use_agent: InArg[bool]  # Enable or disable Agent integration
-        log_file: InArg[str]  # Path for saving the log file
 
     def execute(self, ctx) -> None:
         import datetime
@@ -186,31 +180,21 @@ class GradioFnReturn(Component):
             except Exception as e:
                 print(f"Agent Error: {str(e)}")
 
-        if  not reply and use_openai:
-            try:
-                client = ctx.get('client', None)
-                if not client:
-                    print("OpenAI client is not configured in the context. Skipping OpenAI integration.")
-                else:
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": message}
-                        ],
-                        max_tokens=150,
-                    )
-                    reply = response.choices[0].message.content.strip()
-            except Exception as e:
-                print(f"OpenAI Error: {str(e)}")
+        # Step 2: Optional OpenAI Integration (call external helper if needed)
+        if not reply and use_openai and message:
+            # Dynamically import external OpenAI helper
+            from openai_integration import generate_openai_reply
+            openai_reply = generate_openai_reply(ctx, message)
+            if openai_reply:
+                reply = openai_reply
 
         # Step 3: Predefined Responses
-        if not reply and message:
+        if not reply and message and use_responses:
             responses_dict = ctx.get('gradio_responses', {})
             if responses_dict:
-                for keyword, response in responses_dict.items():
+                for keyword, response_text in responses_dict.items():
                     if keyword in message.lower():
-                        reply = response
+                        reply = response_text
                         break
                 if not reply:
                     reply = "I don't understand."
