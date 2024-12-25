@@ -127,103 +127,193 @@ class GradioLaunch(Component):
 
 @xai_component(color='purple')
 class GradioFnReturn(Component):
-    """Collects return values for a Gradio function.
+    """
+    Collect the return values for a Gradio function.
 
     ##### inPorts:
-    - results (list[any]): Results from a `GradioInterface` parameters outPort.
-    - message (str): User's input message.
-    - history (list): Chat history for updates (optional).
-    - use_responses (bool): Enable predefined responses from ctx.
-    - use_openai (bool): Enable calling an OpenAI helper function.
-    - use_agent (bool): Enable Agent integration for generating responses.
-    - log_file (str): Path to save chat history logs (optional).
+    - results (list[any]): Results for the Gradio function.
+
+    The results here get added to the context as `__gradio__result__`.
     """
     results: InArg[dynalist]
+
+    def execute(self, ctx) -> None:
+        ctx['__gradio__result__'] = self.results.value
+@xai_component(color='purple')
+class GradioPredefinedResponses(Component):
+    """
+    Looks for keywords in the user's message and returns a matching predefined response.
+    If no match, returns a fallback text (e.g., "I don't understand.").
+
+    ##### inPorts:
+    - message (str): The user's message.
+    - responses_dict (dict): A dictionary of {keyword: response}.
+    - fallback (str): Text to return if no keyword matches.
+
+    ##### outPorts:
+    - reply (str): The response determined by the keywords or fallback.
+    """
+    message: InArg[str]
+    responses_dict: InArg[dict]
+    fallback: InArg[str]
+    reply: OutArg[str]
+
+    def execute(self, ctx) -> None:
+        msg = self.message.value
+        responses = self.responses_dict.value or {}
+        fallback_text = self.fallback.value or "I don't understand."
+
+        if not msg:
+            # If there's no message at all, raise or just set fallback
+            # For now, let's set fallback
+            self.reply.value = fallback_text
+            return
+
+        lower_msg = msg.lower()
+        for keyword, response_text in responses.items():
+            if keyword in lower_msg:
+                self.reply.value = response_text
+                return
+
+        # No match found
+        self.reply.value = fallback_text
+
+@xai_component(color='purple')
+class GradioLLMFnReturn(Component):
+    """
+    Expects an already-generated LLM response (from another component).
+    - If the user message is missing or empty, raises an exception.
+    - If no LLM response is available, raises an exception.
+    - Otherwise, updates chat history, logs the conversation, 
+      and places the final LLM reply in `ctx['__gradio__result__']`.
+
+    ##### inPorts:
+    - message (str): The user's message.
+    - history (list): Chat history so far.
+    - llm_response (str | dict | any): The LLM’s result (from another component).
+    - log_file (str): Path to save chat history logs.
+
+    ##### outPorts:
+    - (none): The final reply is placed in `ctx['__gradio__result__']`.
+    """
     message: InArg[str]
     history: InArg[list]
-    use_responses: InArg[bool]
-    use_openai: InArg[bool]
-    use_agent: InArg[bool]
+    llm_response: InArg[any]
     log_file: InArg[str]
 
     def execute(self, ctx) -> None:
-        import datetime
+        msg = self.message.value
+        if not msg or not msg.strip():
+            raise ValueError("LLMFnReturn: No valid user message found.")
+        msg = msg.strip()
 
-        # Inputs
-        message = self.message.value.strip() if self.message.value else None
         chat_history = self.history.value or []
-        use_responses = self.use_responses.value
-        use_openai = self.use_openai.value
-        use_agent = self.use_agent.value
-        log_file_path = self.log_file.value or "chat_history.log"
+        raw_llm_response = self.llm_response.value
+        if not raw_llm_response:
+            raise ValueError("LLMFnReturn: No LLM response provided.")
 
-        reply = None
+        # Convert the response to a string if needed
+        if isinstance(raw_llm_response, dict):
+            # Example: if the LLM response is in a key "content"
+            raw_llm_response = raw_llm_response.get("content", None)
+            if not raw_llm_response:
+                raise ValueError("LLMFnReturn: LLM response dict missing 'content' key.")
 
-        # Step 1: Agent Integration
-        if use_agent and message:
-            try:
-                agent_context = ctx.get('agent', None)
-                agent_run = ctx.get('agent_run', None)
+        reply = str(raw_llm_response)
 
-                if not agent_context or not agent_run:
-                    raise ValueError("AgentRun or agent context not found in ctx. Please initialize them first.")
-
-                conversation = ctx.get('agent_conversation', [])
-                conversation.append({"role": "user", "content": message})
-                agent_run.conversation.value = conversation
-                agent_run.agent_name.value = agent_context['name']
-
-                agent_run.execute(ctx)
-                reply = agent_run.last_response.value
-                ctx['agent_conversation'] = agent_run.out_conversation.value
-
-            except Exception as e:
-                print(f"Agent Error: {str(e)}")
-
-        # Step 2: Optional OpenAI Integration (call external helper if needed)
-        if not reply and use_openai and message:
-            # Dynamically import external OpenAI helper
-            from openai_integration import generate_openai_reply
-            openai_reply = generate_openai_reply(ctx, message)
-            if openai_reply:
-                reply = openai_reply
-
-        # Step 3: Predefined Responses
-        if not reply and message and use_responses:
-            responses_dict = ctx.get('gradio_responses', {})
-            if responses_dict:
-                for keyword, response_text in responses_dict.items():
-                    if keyword in message.lower():
-                        reply = response_text
-                        break
-                if not reply:
-                    reply = "I don't understand."
-
-        # Step 4: Default Fallback
-        if not reply:
-            reply = self.results.value[0] if self.results.value else "No result found"
-
-        # Update Chat History
+        # Update chat history
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_entry_user = f"[{timestamp}] User: {message}" if message else None
+        new_entry_user = f"[{timestamp}] User: {msg}"
         new_entry_bot = f"[{timestamp}] Bot: {reply}"
-        updated_history = chat_history + [new_entry_user, new_entry_bot] if message else chat_history
+        updated_history = chat_history + [new_entry_user, new_entry_bot]
 
-        # Save Result to Context
+        # Store the result in the context for Gradio
         ctx['__gradio__result__'] = [reply]
         ctx['history'] = updated_history
 
-        # Save Chat Log
-        if message:
-            try:
-                with open(log_file_path, "a") as file:
-                    if new_entry_user:
-                        file.write(f"{new_entry_user}\n")
-                    file.write(f"{new_entry_bot}\n")
-                print(f"Chat history saved to {log_file_path}.")
-            except Exception as e:
-                print(f"Failed to write log to {log_file_path}: {str(e)}")
+        # Optionally log the conversation
+        log_file_path = self.log_file.value or "chat_history.log"
+        try:
+            with open(log_file_path, "a") as f:
+                f.write(f"{new_entry_user}\n")
+                f.write(f"{new_entry_bot}\n")
+            print(f"LLM conversation logged to {log_file_path}")
+        except Exception as e:
+            print(f"LLMFnReturn: Failed to write log to {log_file_path}: {str(e)}")
 
+@xai_component(color='purple')
+class GradioAgentFnReturn(Component):
+    """
+    Integrates an agent (retrieved from context) and updates the chat history.
+
+    - If `agent` or `agent_run` is missing from ctx, raises an exception.
+    - If the message is empty, raises an exception.
+    - After running the agent, updates `ctx['__gradio__result__']` with the agent's reply,
+      logs to file, etc.
+
+    ##### inPorts:
+    - message (str): The user's message.
+    - history (list): Chat history so far.
+    - log_file (str): Optional path to save chat logs.
+
+    Agent context is expected under `ctx['agent']`.
+    The agent run object is expected under `ctx['agent_run']`.
+    Typically, these are pre-configured earlier in the pipeline.
+    """
+    message: InArg[str]
+    history: InArg[list]
+    log_file: InArg[str]
+
+    def execute(self, ctx) -> None:
+        msg = self.message.value
+        if not msg or not msg.strip():
+            raise ValueError("AgentFnReturn: No valid user message found.")
+        msg = msg.strip()
+
+        chat_history = self.history.value or []
+        agent_context = ctx.get('agent')
+        agent_run = ctx.get('agent_run')
+        if not agent_context or not agent_run:
+            raise ValueError("AgentFnReturn: Missing agent or agent_run in the context.")
+
+        # Append message to conversation
+        conversation = ctx.get('agent_conversation', [])
+        conversation.append({"role": "user", "content": msg})
+
+        # Configure agent_run
+        agent_run.conversation.value = conversation
+        if 'name' in agent_context:
+            agent_run.agent_name.value = agent_context['name']
+
+        # Execute the agent
+        agent_run.execute(ctx)
+        # Retrieve agent's reply
+        reply = agent_run.last_response.value
+        if not reply:
+            raise ValueError("AgentFnReturn: Agent did not produce a response.")
+
+        # Update conversation in context
+        ctx['agent_conversation'] = agent_run.out_conversation.value
+
+        # Update the chat history
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_entry_user = f"[{timestamp}] User: {msg}"
+        new_entry_bot = f"[{timestamp}] Bot: {reply}"
+        updated_history = chat_history + [new_entry_user, new_entry_bot]
+
+        # Store final result for Gradio
+        ctx['__gradio__result__'] = [reply]
+        ctx['history'] = updated_history
+
+        # Log to file if desired
+        log_file_path = self.log_file.value or "chat_history.log"
+        try:
+            with open(log_file_path, "a") as f:
+                f.write(f"{new_entry_user}\n")
+                f.write(f"{new_entry_bot}\n")
+            print(f"Agent conversation logged to {log_file_path}")
+        except Exception as e:
+            print(f"AgentFnReturn: Failed to write log to {log_file_path}: {str(e)}")
 
 @xai_component(color='orange')
 class GradioTextbox(Component):
