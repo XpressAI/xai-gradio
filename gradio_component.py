@@ -1,18 +1,17 @@
 from xai_components.base import InArg, OutArg, InCompArg, Component, BaseComponent, secret, xai_component, dynalist, SubGraphExecutor
 import gradio as gr
 import makefun
-from openai import OpenAI
 import datetime
 
 @xai_component(color='blue', type='branch')
 class GradioChatInterface(Component):
-    """Creates a Gradio Chatbot interface with support for text and image uploads.
-    
+    """
+    Creates a Gradio Chatbot interface.
+
     ##### outPorts:
-    - interface (gr.Blocks): Gradio Blocks object for the chatbot interface.
-    - message (str): Stores the user's message.
-    - history (list): Chat history for the session.
-    - uploaded_image (any): Uploaded image file from the user.
+    - interface (gr.Blocks): Gradio Blocks object for the chatbot interface. Connect to `GradioLaunch`.
+    - message (str): the most recent user message.
+    - history (list): Chat history for the session in OpenAi conversation format.
 
     ##### Branches:
     - fn (BaseComponent): Subgraph executor for processing messages.
@@ -21,35 +20,102 @@ class GradioChatInterface(Component):
     fn: BaseComponent
     message: OutArg[str]
     history: OutArg[list]
-    uploaded_image: OutArg[any]
 
     def execute(self, ctx) -> None:
-        def fn(history=None, message=None, image=None):
-            if history is None:
-                history = []
-            if image is not None:
-                self.uploaded_image.value = image
-                history.append((None, gr.Image(value=image, label="User's image")))
-            if message:
-                self.message.value = message
-                history.append((message, None))
-                SubGraphExecutor(self.fn).do(ctx)
-                result = ctx['__gradio__result__']
-                history.append((None, result[0]))
-            return history, "", None
+        def role_dicts_to_pairs(history):
+            """
+            Converts a list of role/content dicts like:
+            [
+              {"role": "user", "content": "Hello"},
+              {"role": "assistant", "content": "Hi there!"},
+              {"role": "user", "content": "How are you?"}
+            ]
+            into a list of [user_msg, assistant_msg] pairs for Gradio display:
+            [
+              ["Hello", "Hi there!"],
+              ["How are you?", None]
+            ]
+            """
+            display = []
+            user_buffer = None
+            for item in history:
+                role = item.get("role", "")
+                content = item.get("content", "")
+                if role == "system":
+                    continue
+                elif role == "user":
+                    # If there's a user_buffer pending, append it
+                    if user_buffer is not None:
+                        display.append([user_buffer, None])
+                    user_buffer = content
+                elif role == "assistant":
+                    if user_buffer is not None:
+                        display.append([user_buffer, content])
+                        user_buffer = None
+                    else:
+                        display.append([None, content])
+            # Edge case: if user message is leftover
+            if user_buffer is not None:
+                display.append([user_buffer, None])
+            return display
 
+        def submit_fn(user_message=None, user_image=None):
+            # Pass the user message to the outports
+            if user_message:
+                self.message.value = user_message
+
+            # Execute the subgraph
+            SubGraphExecutor(self.fn).do(ctx)
+
+            # Now retrieve the updated conversation from ctx
+            conversation = ctx.get('__gradio_chat_history__', [])
+            self.history.value = conversation  # Store it in the outport
+
+            # Convert conversation into display pairs
+            display_history = role_dicts_to_pairs(conversation)
+
+            # Return the display_history to the chatbot, and clear text/image input
+            return display_history, "", None
+
+        # Build the Gradio interface
         with gr.Blocks() as demo:
             chatbot = gr.Chatbot(label="Chatbot")
-            msg = gr.Textbox(label="Type a message", placeholder="Enter your message here...", interactive=True, lines=1)
-            img = gr.Image(label="Upload an image", type="filepath", interactive=True)
+            msg = gr.Textbox(
+                label="Type a message", 
+                placeholder="Enter your message here...",
+                interactive=True, lines=1
+            )
             submit = gr.Button("Send")
-            submit.click(fn, inputs=[chatbot, msg, img], outputs=[chatbot, msg, img])
-            msg.submit(fn, inputs=[chatbot, msg, img], outputs=[chatbot, msg, img])
+
+            submit.click(submit_fn, inputs=[msg], outputs=[chatbot, msg])
+            msg.submit(submit_fn, inputs=[msg], outputs=[chatbot, msg])
+
         self.interface.value = demo
+
+@xai_component
+class DeepCopy(Component):
+    """
+    Creates a deep copy of the input data and outputs the copied data.
+
+    ##### inPorts:
+    - data (any): The input data to be deep-copied.
+
+    ##### outPorts:
+    - copied_data (any): The deep-copied output data.
+    """
+    data: InArg[any]
+    copied_data: OutArg[any]
+
+    def execute(self, ctx) -> None:
+        import copy
+
+        # Perform a deep copy of the input data
+        input_data = self.data.value
+        self.copied_data.value = copy.deepcopy(input_data)
 
 @xai_component(color='blue', type='branch')
 class GradioInterface(Component):
-    """Creates a Gradio custom Gradio Interface.
+    """Creates a custom Gradio Interface.
 
     ##### inPorts:
     - parameterNames (dynalist): List of parameter names for the function.
@@ -127,118 +193,103 @@ class GradioLaunch(Component):
 
 @xai_component(color='purple')
 class GradioFnReturn(Component):
-    """Collects return values for a Gradio function.
+    """
+    Collect the return values for a Gradio function.
 
     ##### inPorts:
-    - results (list[any]): Results from a `GradioInterface` parameters outPort.
-    - message (str): User's input message.
-    - history (list): Chat history for updates (optional).
-    - use_responses (bool): Enable predefined responses from ctx.
-    - use_openai (bool): Enable OpenAI integration for generating responses.
-    - use_agent (bool): Enable Agent integration for generating responses.
-    - log_file (str): Path to save chat history logs (optional).
+    - results (list[any]): Results for the Gradio function.
+
+    The results here get added to the context as `__gradio__result__`.
     """
     results: InArg[dynalist]
+
+    def execute(self, ctx) -> None:
+        ctx['__gradio__result__'] = self.results.value
+
+@xai_component(color='purple')
+class GradioPredefinedResponses(Component):
+    """
+    Looks for keywords in the user's message and returns a matching predefined response.
+    If no match, returns a fallback text (e.g., "I don't understand.").
+
+    ##### inPorts:
+    - message (str): The user's message.
+    - responses_dict (dict): A dictionary of {keyword: response}.
+    - fallback (str): Text to return if no keyword matches.
+
+    ##### outPorts:
+    - reply (str): The response determined by the keywords or fallback.
+    """
+    message: InArg[str]
+    responses_dict: InArg[dict]
+    fallback: InArg[str]
+    reply: OutArg[str]
+
+    def execute(self, ctx) -> None:
+        msg = self.message.value
+        responses = self.responses_dict.value or {}
+        fallback_text = self.fallback.value or "I don't understand."
+
+        if not msg:
+            # If there's no message at all, raise or just set fallback
+            # For now, let's set fallback
+            self.reply.value = fallback_text
+            return
+
+        lower_msg = msg.lower()
+        for keyword, response_text in responses.items():
+            if keyword in lower_msg:
+                self.reply.value = response_text
+                return
+
+        # No match found
+        self.reply.value = fallback_text
+
+@xai_component(color='purple')
+class GradioChatFnReturn(Component):
+    """
+    Handles the chat history and appends responses from a OpenAI-like Chat to it.
+    Internally updates `ctx['__gradio_chat_history__']` for `GradioChatInterface` to process.
+
+    ##### inPorts:
+    - message (str): The user's message just sent.
+    - history (list): The conversation so far. Typically connected from the `GradioChatInterface` component.
+    - llm_response (str/dict): The raw LLM response from the model.
+    - log_file (str): Path to optionally log the conversation.
+
+    ##### outPorts:
+    """
     message: InArg[str]
     history: InArg[list]
-    use_responses: InArg[bool]
-    use_openai: InArg[bool]
-    use_agent: InArg[bool]
+    llm_response: InArg[any]
     log_file: InArg[str]
 
     def execute(self, ctx) -> None:
-        use_responses: InArg[bool]  # Enable or disable predefined responses
-        use_openai: InArg[bool]  # Enable or disable OpenAI integration
-        use_agent: InArg[bool]  # Enable or disable Agent integration
-        log_file: InArg[str]  # Path for saving the log file
 
-    def execute(self, ctx) -> None:
-        import datetime
+        if '__gradio_chat_history__' not in ctx:
+            ctx['__gradio_chat_history__'] = []
+        conversation = ctx['__gradio_chat_history__']
 
-        # Inputs
-        message = self.message.value.strip() if self.message.value else None
-        chat_history = self.history.value or []
-        use_responses = self.use_responses.value
-        use_openai = self.use_openai.value
-        use_agent = self.use_agent.value
-        log_file_path = self.log_file.value or "chat_history.log"
+        user_msg = self.message.value
+        if user_msg and user_msg.strip():
+            conversation.append({"role": "user", "content": user_msg})
 
-        reply = None
+        raw = self.llm_response.value
+        if isinstance(raw, dict):
+            raw = raw.get("content", "")
+        assistant_reply = str(raw).strip()
+        if assistant_reply:
+            conversation.append({"role": "assistant", "content": assistant_reply})
 
-        # Step 1: Agent Integration
-        if use_agent and message:
-            try:
-                agent_context = ctx.get('agent', None)
-                agent_run = ctx.get('agent_run', None)
+        ctx['__gradio_chat_history__'] = conversation
 
-                if not agent_context or not agent_run:
-                    raise ValueError("AgentRun or agent context not found in ctx. Please initialize them first.")
-
-                conversation = ctx.get('agent_conversation', [])
-                conversation.append({"role": "user", "content": message})
-                agent_run.conversation.value = conversation
-                agent_run.agent_name.value = agent_context['name']
-
-                agent_run.execute(ctx)
-                reply = agent_run.last_response.value
-                ctx['agent_conversation'] = agent_run.out_conversation.value
-
-            except Exception as e:
-                print(f"Agent Error: {str(e)}")
-
-        if  not reply and use_openai:
-            try:
-                client = ctx.get('client', None)
-                if not client:
-                    print("OpenAI client is not configured in the context. Skipping OpenAI integration.")
-                else:
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": message}
-                        ],
-                        max_tokens=150,
-                    )
-                    reply = response.choices[0].message.content.strip()
-            except Exception as e:
-                print(f"OpenAI Error: {str(e)}")
-
-        # Step 3: Predefined Responses
-        if not reply and message:
-            responses_dict = ctx.get('gradio_responses', {})
-            if responses_dict:
-                for keyword, response in responses_dict.items():
-                    if keyword in message.lower():
-                        reply = response
-                        break
-                if not reply:
-                    reply = "I don't understand."
-
-        # Step 4: Default Fallback
-        if not reply:
-            reply = self.results.value[0] if self.results.value else "No result found"
-
-        # Update Chat History
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_entry_user = f"[{timestamp}] User: {message}" if message else None
-        new_entry_bot = f"[{timestamp}] Bot: {reply}"
-        updated_history = chat_history + [new_entry_user, new_entry_bot] if message else chat_history
-
-        # Save Result to Context
-        ctx['__gradio__result__'] = [reply]
-        ctx['history'] = updated_history
-
-        # Save Chat Log
-        if message:
-            try:
-                with open(log_file_path, "a") as file:
-                    if new_entry_user:
-                        file.write(f"{new_entry_user}\n")
-                    file.write(f"{new_entry_bot}\n")
-                print(f"Chat history saved to {log_file_path}.")
-            except Exception as e:
-                print(f"Failed to write log to {log_file_path}: {str(e)}")
+        log_file = self.log_file.value or "chat_history.log"
+        try:
+            with open(log_file, "a") as f:
+                f.write(f"User: {user_msg}\nBot: {assistant_reply}\n")
+            print(f"LLM conversation logged to {log_file}")
+        except Exception as e:
+            print(f"Failed to log conversation: {e}")
 
 
 @xai_component(color='orange')
