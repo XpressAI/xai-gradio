@@ -125,6 +125,12 @@ This example creates an interactive form using Gradio components to collect user
 
 This example creates an interactive Gradio chatbot interface that integrates OpenAI responses and predefined replies. The bot can respond to common greetings such as "hello" or "bye" using predefined responses and utilizes OpenAI's GPT for more complex queries. The chat interface is interactive, tracks conversation history, and allows seamless user interaction.
 
+Additional Example Requirement: 
+```
+pip install openai==1.57
+```
+
+
 ### Gradio Agent Example  
 
 This example creates an interactive Gradio chatbot interface powered by an OpenAI agent. The bot can respond to user queries, such as providing current weather information and the time in specific locations, by using predefined tools like `get_weather` and `get_current_time`. The chatbot tracks the conversation history and saves the responses for further interaction.
