@@ -92,27 +92,6 @@ class GradioChatInterface(Component):
 
         self.interface.value = demo
 
-@xai_component
-class DeepCopy(Component):
-    """
-    Creates a deep copy of the input data and outputs the copied data.
-
-    ##### inPorts:
-    - data (any): The input data to be deep-copied.
-
-    ##### outPorts:
-    - copied_data (any): The deep-copied output data.
-    """
-    data: InArg[any]
-    copied_data: OutArg[any]
-
-    def execute(self, ctx) -> None:
-        import copy
-
-        # Perform a deep copy of the input data
-        input_data = self.data.value
-        self.copied_data.value = copy.deepcopy(input_data)
-
 @xai_component(color='blue', type='branch')
 class GradioInterface(Component):
     """Creates a custom Gradio Interface.
