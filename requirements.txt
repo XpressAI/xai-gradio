@@ -1,2 +1,2 @@
-gradio==4.44.0
+gradio==5.30.0
 makefun==1.15.6
