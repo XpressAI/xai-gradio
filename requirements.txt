@@ -1,2 +1,2 @@
 gradio==5.30.0
-makefun==1.15.6
+makefun==1.16.0
